@@ -1,5 +1,6 @@
 package com.fcm.webpush.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,5 +17,12 @@ public interface NotificationSubscriptionRepository extends JpaRepository<Notifi
 	List<NotificationSubscription> findAllByGuestId(String guestId);
 
 	List<NotificationSubscription> findByUserIdIsNull();
+
+	List<NotificationSubscription> findByUserIdInAndIsActiveTrue(Collection<String> userIds);
+
+	List<NotificationSubscription> findByGuestIdInAndIsActiveTrue(Collection<String> guestIds);
+
+	List<NotificationSubscription> findByGuestIdIn(Collection<String> guestIds);
 }
+
 

@@ -15,11 +15,9 @@ import com.fcm.webpush.repository.NotificationMasterRepository;
 import com.fcm.webpush.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
 @Component
 @RequiredArgsConstructor
-@Slf4j
 public class AdminDataSeeder implements ApplicationRunner {
 
 	private final UserRepository 					userRepository;

@@ -2,6 +2,7 @@ package com.fcm.webpush.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,7 +18,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping({"/auth/api/users"})
+@RequestMapping("/auth")
+@CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true")
 @RequiredArgsConstructor
 public class UserController {
 
@@ -37,4 +39,12 @@ public class UserController {
 		return ResponseEntity.ok(response);
 	}
 
+	@PostMapping("/logout")
+	public ResponseEntity<Void> logoutUser(final HttpSession session) {
+		if (session != null) {
+			session.invalidate();
+		}
+		return ResponseEntity.ok().build();
+	}
 }
+

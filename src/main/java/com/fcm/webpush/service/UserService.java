@@ -6,7 +6,7 @@ import com.fcm.webpush.dto.response.UserResponseDto;
 
 public interface UserService {
 
-    UserResponseDto registerUser(UserRegistrationRequestDto request);
+	UserResponseDto registerUser(UserRegistrationRequestDto request);
 
-    UserResponseDto loginUser(UserLoginRequestDto request);
+	UserResponseDto loginUser(UserLoginRequestDto request);
 }

@@ -6,6 +6,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.fcm.webpush.config.FirebaseConfig;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 @SpringBootTest
 @TestPropertySource(properties = {
@@ -19,6 +20,9 @@ class WebpushApplicationTests {
 
     @MockitoBean
     private FirebaseConfig firebaseConfig;
+
+    @MockitoBean
+    private FirebaseMessaging firebaseMessaging;
 
     @Test
     void contextLoads() {
