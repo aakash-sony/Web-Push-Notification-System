@@ -9,9 +9,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class UserResponseDto {
+public class GuestResponseDto {
 
 	private Long 		id;
-	private String 		username;
+	private String 		guestId;
+	private String 		deviceType;
+	private boolean 	isActive;
 }
-

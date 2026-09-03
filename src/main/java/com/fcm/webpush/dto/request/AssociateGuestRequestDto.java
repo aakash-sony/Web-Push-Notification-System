@@ -12,6 +12,6 @@ import lombok.NoArgsConstructor;
 @Builder
 public class AssociateGuestRequestDto {
 
-    @NotBlank(message = "guestId is required")
-    private String guestId;
+	@NotBlank(message = "guestId is required")
+	private String guestId;
 }

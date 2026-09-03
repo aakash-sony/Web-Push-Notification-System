@@ -32,13 +32,10 @@ public class NotificationController {
 	}
 
 	@PatchMapping("/subscriptions/associate")
-	public ResponseEntity<Void> associateGuestWithUser(
-			@Valid @RequestBody final AssociateGuestRequestDto request,
-			final HttpSession session) {
-		final Object userIdObj = session.getAttribute("USER_ID");
-		if (userIdObj == null) {
+	public ResponseEntity<Void> associateGuestWithUser(@Valid @RequestBody final AssociateGuestRequestDto request, final HttpSession session) {
+		final var userIdObj = session.getAttribute("USER_ID");
+		if (userIdObj == null)
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User is not authenticated");
-		}
 		notificationService.associateGuestWithUser(request.getGuestId(), userIdObj.toString());
 		return ResponseEntity.ok().build();
 	}

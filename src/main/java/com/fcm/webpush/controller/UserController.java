@@ -17,7 +17,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping({"/auth", "/api/users"})
+@RequestMapping({"/auth/api/users"})
 @RequiredArgsConstructor
 public class UserController {
 
@@ -33,6 +33,8 @@ public class UserController {
 	public ResponseEntity<UserResponseDto> loginUser(@Valid @RequestBody final UserLoginRequestDto request, final HttpSession session) {
 		final var response = userService.loginUser(request);
 		session.setAttribute("USER_ID", String.valueOf(response.getId()));
+		session.setAttribute("USERNAME", response.getUsername());
 		return ResponseEntity.ok(response);
 	}
+
 }

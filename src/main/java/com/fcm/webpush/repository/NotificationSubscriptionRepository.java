@@ -14,4 +14,7 @@ public interface NotificationSubscriptionRepository extends JpaRepository<Notifi
 	Optional<NotificationSubscription> findByFcmToken(String fcmToken);
 
 	List<NotificationSubscription> findAllByGuestId(String guestId);
+
+	List<NotificationSubscription> findByUserIdIsNull();
 }
+

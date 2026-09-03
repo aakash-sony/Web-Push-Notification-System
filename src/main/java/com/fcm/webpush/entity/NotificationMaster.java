@@ -2,8 +2,12 @@ package com.fcm.webpush.entity;
 
 import java.time.Instant;
 
+import com.fcm.webpush.enums.NotificationType;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -16,22 +20,30 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "users")
+@Table(name = "notification_masters")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class User {
+public class NotificationMaster {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
+	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, unique = true)
-	private String username;
+	private NotificationType code;
 
 	@Column(nullable = false)
-	private String password;
+	private String title;
+
+	@Column(nullable = false)
+	private String bodyTemplate;
+
+	@Builder.Default
+	@Column(nullable = false)
+	private boolean isActive = true;
 
 	@Column(nullable = false, updatable = false)
 	private Instant createdAt;
