@@ -51,7 +51,7 @@ public class NotificationLog {
 
 	private Instant readAt;
 
-	@Column(nullable = false, updatable = false)
+	@Column(nullable = false)
 	private Instant createdAt;
 
 	@Column(nullable = false)

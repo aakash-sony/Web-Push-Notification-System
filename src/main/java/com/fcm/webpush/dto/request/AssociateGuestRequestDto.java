@@ -14,4 +14,6 @@ public class AssociateGuestRequestDto {
 
 	@NotBlank(message = "guestId is required")
 	private String guestId;
+
+	private String userId;
 }

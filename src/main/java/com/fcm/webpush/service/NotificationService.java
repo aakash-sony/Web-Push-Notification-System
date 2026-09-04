@@ -14,6 +14,8 @@ public interface NotificationService {
 
 	SubscriptionResponseDto registerOrRefreshSubscription(SubscriptionRequestDto request);
 
+	SubscriptionResponseDto registerOrRefreshSubscription(SubscriptionRequestDto request, String userId);
+
 	void associateGuestWithUser(String guestId, String userId);
 
 	SendNotificationResponseDto sendNotification(SendNotificationRequestDto request);
@@ -27,6 +29,10 @@ public interface NotificationService {
 	UnreadCountResponseDto getGuestUnreadCount(String guestId);
 
 	NotificationLogResponseDto markAsRead(Long notificationId, String requesterUserId, String requesterGuestId);
+
+	boolean checkSubscriptionExists(String guestId, String fcmToken);
+
+	void detachUserFromSubscription(String guestId, String fcmToken);
 }
 
 

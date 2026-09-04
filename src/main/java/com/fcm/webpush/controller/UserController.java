@@ -8,12 +8,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.web.bind.annotation.RequestParam;
+
 import com.fcm.webpush.dto.request.UserLoginRequestDto;
 import com.fcm.webpush.dto.request.UserRegistrationRequestDto;
 import com.fcm.webpush.dto.response.UserResponseDto;
+import com.fcm.webpush.service.NotificationService;
 import com.fcm.webpush.service.UserService;
 
-import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -24,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 public class UserController {
 
 	private final UserService userService;
+	private final NotificationService notificationService;
 
 	@PostMapping("/register")
 	public ResponseEntity<UserResponseDto> registerUser(@Valid @RequestBody final UserRegistrationRequestDto request) {
@@ -32,19 +35,16 @@ public class UserController {
 	}
 
 	@PostMapping("/login")
-	public ResponseEntity<UserResponseDto> loginUser(@Valid @RequestBody final UserLoginRequestDto request, final HttpSession session) {
+	public ResponseEntity<UserResponseDto> loginUser(@Valid @RequestBody final UserLoginRequestDto request) {
 		final var response = userService.loginUser(request);
-		session.setAttribute("USER_ID", String.valueOf(response.getId()));
-		session.setAttribute("USERNAME", response.getUsername());
 		return ResponseEntity.ok(response);
 	}
 
 	@PostMapping("/logout")
-	public ResponseEntity<Void> logoutUser(final HttpSession session) {
-		if (session != null) {
-			session.invalidate();
-		}
+	public ResponseEntity<Void> logoutUser(
+			@RequestParam(required = false) final String guestId,
+			@RequestParam(required = false) final String fcmToken) {
+		notificationService.detachUserFromSubscription(guestId, fcmToken);
 		return ResponseEntity.ok().build();
 	}
 }
-

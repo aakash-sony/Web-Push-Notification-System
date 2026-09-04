@@ -16,6 +16,12 @@ public interface NotificationSubscriptionRepository extends JpaRepository<Notifi
 
 	List<NotificationSubscription> findAllByGuestId(String guestId);
 
+	boolean existsByGuestId(String guestId);
+
+	Optional<NotificationSubscription> findByGuestIdAndFcmToken(String guestId, String fcmToken);
+
+	boolean existsByGuestIdAndFcmToken(String guestId, String fcmToken);
+
 	List<NotificationSubscription> findByUserIdIsNull();
 
 	List<NotificationSubscription> findByUserIdInAndIsActiveTrue(Collection<String> userIds);
@@ -23,6 +29,8 @@ public interface NotificationSubscriptionRepository extends JpaRepository<Notifi
 	List<NotificationSubscription> findByGuestIdInAndIsActiveTrue(Collection<String> guestIds);
 
 	List<NotificationSubscription> findByGuestIdIn(Collection<String> guestIds);
+
+	List<NotificationSubscription> findByUserIdIsNullAndIsActiveTrue();
 }
 
 

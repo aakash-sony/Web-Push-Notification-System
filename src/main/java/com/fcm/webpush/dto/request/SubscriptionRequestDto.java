@@ -19,4 +19,6 @@ public class SubscriptionRequestDto {
 	private String fcmToken;
 
 	private String deviceType;
+
+	private String userId;
 }

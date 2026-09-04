@@ -6,11 +6,9 @@ import com.fcm.webpush.dto.response.GuestResponseDto;
 import com.fcm.webpush.dto.response.NotificationTemplateResponseDto;
 import com.fcm.webpush.dto.response.UserResponseDto;
 
-import jakarta.servlet.http.HttpSession;
-
 public interface AdminService {
 
-	void verifyAdminAuthorization(HttpSession session);
+	void verifyAdminAuthorization(String username);
 
 	List<GuestResponseDto> getAllGuests();
 
