@@ -17,7 +17,7 @@ public class NotificationScheduler {
 	private final NotificationScheduleService notificationScheduleService;
 
 	@Scheduled(fixedDelay = 120000)
-	@SchedulerLock(name = "runScheduledNotifications", lockAtLeastFor = "15s", lockAtMostFor = "5m")
+	@SchedulerLock(name = "runScheduledNotifications", lockAtLeastFor = "30s", lockAtMostFor = "15m")
 	public void runScheduledNotifications() {
 		log.debug("Running periodic notification schedule check...");
 		try {

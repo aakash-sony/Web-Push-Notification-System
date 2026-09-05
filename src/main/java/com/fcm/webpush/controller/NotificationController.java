@@ -4,7 +4,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,35 +26,29 @@ import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/notifications")
-@CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true")
 @RequiredArgsConstructor
 public class NotificationController {
 
 	private final NotificationService notificationService;
+	private final com.fcm.webpush.service.SessionValidationService sessionValidationService;
+	private final jakarta.servlet.http.HttpServletRequest httpRequest;
 
 	@PostMapping("/subscriptions")
-	public ResponseEntity<SubscriptionResponseDto> registerOrRefreshSubscription(
-			@Valid @RequestBody final SubscriptionRequestDto request,
-			@org.springframework.web.bind.annotation.RequestHeader(value = "X-User-Username", required = false) final String authenticatedUsername) {
-		final String targetUserId = (authenticatedUsername != null && !authenticatedUsername.isBlank())
-				? authenticatedUsername
-				: (request.getUserId() != null && !request.getUserId().isBlank() ? request.getUserId() : null);
+	public ResponseEntity<SubscriptionResponseDto> registerOrRefreshSubscription(@Valid @RequestBody final SubscriptionRequestDto request) {
+		final var sessionUsername = sessionValidationService.getAuthenticatedUsername(httpRequest);
+		final var targetUserId = sessionUsername != null && !sessionUsername.isBlank() ? sessionUsername : request.getUserId() != null && !request.getUserId().isBlank() ? request.getUserId() : null;
 		final var response = notificationService.registerOrRefreshSubscription(request, targetUserId);
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 
 	@GetMapping("/subscriptions/check")
-	public ResponseEntity<Boolean> checkSubscriptionExists(
-			@RequestParam(required = false) final String guestId,
-			@RequestParam(required = false) final String fcmToken) {
-		final boolean exists = notificationService.checkSubscriptionExists(guestId, fcmToken);
+	public ResponseEntity<Boolean> checkSubscriptionExists( @RequestParam(required = false) final String guestId, @RequestParam(required = false) final String fcmToken) {
+		final var exists = notificationService.checkSubscriptionExists(guestId, fcmToken);
 		return ResponseEntity.ok(exists);
 	}
 
 	@PostMapping("/subscriptions/disassociate")
-	public ResponseEntity<Void> disassociateSubscription(
-			@RequestParam(required = false) final String guestId,
-			@RequestParam(required = false) final String fcmToken) {
+	public ResponseEntity<Void> disassociateSubscription(@RequestParam(required = false) final String guestId, @RequestParam(required = false) final String fcmToken) {
 		notificationService.detachUserFromSubscription(guestId, fcmToken);
 		return ResponseEntity.ok().build();
 	}
@@ -71,6 +64,7 @@ public class NotificationController {
 
 	@GetMapping("/user/{userId}")
 	public ResponseEntity<Page<NotificationLogResponseDto>> getUserNotifications(@PathVariable final String userId, @RequestParam(defaultValue = "0") final int page, @RequestParam(defaultValue = "20") final int size) {
+		sessionValidationService.validateUserSession(httpRequest, userId);
 		final var pageable = PageRequest.of(page, size);
 		final var response = notificationService.getUserNotifications(userId, pageable);
 		return ResponseEntity.ok(response);
@@ -85,6 +79,7 @@ public class NotificationController {
 
 	@GetMapping("/user/{userId}/unread-count")
 	public ResponseEntity<UnreadCountResponseDto> getUserUnreadCount(@PathVariable final String userId) {
+		sessionValidationService.validateUserSession(httpRequest, userId);
 		final var response = notificationService.getUserUnreadCount(userId);
 		return ResponseEntity.ok(response);
 	}
@@ -99,6 +94,9 @@ public class NotificationController {
 	public ResponseEntity<NotificationLogResponseDto> markAsRead(@PathVariable final Long notificationId, @RequestParam(required = false) final String userId, @RequestParam(required = false) final String guestId) {
 		if (userId == null && guestId == null)
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Requester userId or guestId is required");
+
+		if (userId != null && !userId.isBlank())
+			sessionValidationService.validateUserSession(httpRequest, userId);
 
 		final var response = notificationService.markAsRead(notificationId, userId, guestId);
 		return ResponseEntity.ok(response);

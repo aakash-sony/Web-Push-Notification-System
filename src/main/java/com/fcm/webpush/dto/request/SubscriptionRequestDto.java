@@ -12,7 +12,6 @@ import lombok.NoArgsConstructor;
 @Builder
 public class SubscriptionRequestDto {
 
-	@NotBlank(message = "guestId is required")
 	private String guestId;
 
 	@NotBlank(message = "fcmToken is required")

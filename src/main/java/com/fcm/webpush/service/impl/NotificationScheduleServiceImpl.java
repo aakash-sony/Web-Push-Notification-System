@@ -7,12 +7,16 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -26,8 +30,6 @@ import com.fcm.webpush.entity.NotificationLog;
 import com.fcm.webpush.entity.NotificationSchedule;
 import com.fcm.webpush.entity.NotificationScheduleExecution;
 import com.fcm.webpush.entity.NotificationSubscription;
-import com.fcm.webpush.entity.User;
-import com.fcm.webpush.enums.ScheduleType;
 import com.fcm.webpush.repository.NotificationLogRepository;
 import com.fcm.webpush.repository.NotificationMasterRepository;
 import com.fcm.webpush.repository.NotificationScheduleExecutionRepository;
@@ -47,13 +49,13 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 
 	private static final ZoneId APP_ZONE = ZoneId.of("Asia/Kolkata");
 
-	private final NotificationScheduleRepository scheduleRepository;
-	private final NotificationScheduleExecutionRepository executionRepository;
-	private final NotificationMasterRepository templateRepository;
-	private final UserRepository userRepository;
-	private final NotificationSubscriptionRepository subscriptionRepository;
-	private final NotificationLogRepository notificationLogRepository;
-	private final NotificationService notificationService;
+	private final NotificationScheduleRepository 				scheduleRepository;
+	private final NotificationScheduleExecutionRepository 		executionRepository;
+	private final NotificationMasterRepository 					templateRepository;
+	private final UserRepository 								userRepository;
+	private final NotificationSubscriptionRepository 			subscriptionRepository;
+	private final NotificationLogRepository 					notificationLogRepository;
+	private final NotificationService 							notificationService;
 
 	@Override
 	@Transactional
@@ -138,15 +140,15 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 
 	@Override
 	public void processDueSchedules() {
-		final List<NotificationSchedule> activeSchedules = scheduleRepository.findByIsActiveTrue();
+		final var activeSchedules = scheduleRepository.findByIsActiveTrue();
 		if (activeSchedules.isEmpty())
 			return;
 
-		final ZonedDateTime now 		= ZonedDateTime.now(APP_ZONE);
-		final LocalDate today 			= now.toLocalDate();
-		final LocalTime currentTime 	= now.toLocalTime();
+		final var now 				= ZonedDateTime.now(APP_ZONE);
+		final var today 			= now.toLocalDate();
+		final var currentTime 		= now.toLocalTime();
 
-		for (final NotificationSchedule schedule : activeSchedules)
+		for (final var schedule : activeSchedules)
 			try {
 				processSingleSchedule(schedule, now, today, currentTime);
 			} catch (final Exception e) {
@@ -158,13 +160,13 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 		if (schedule.getTemplate() == null || !schedule.getTemplate().isActive())
 			return;
 
-		final ScheduleType type 		= schedule.getScheduleType();
+		final var type 					= schedule.getScheduleType();
 
 		switch (type) {
 		case DAILY: {
 			if (schedule.getTimeOfDay() != null && currentTime.isBefore(schedule.getTimeOfDay()))
 				return;
-			final String occurrenceKey 	= "DAILY_" + today;
+			final var occurrenceKey 	= "DAILY_" + today;
 			processScheduleForRecipients(schedule, occurrenceKey, now, today);
 			break;
 		}
@@ -183,92 +185,215 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 	}
 
 	private void processScheduleForRecipients(final NotificationSchedule schedule, final String occurrenceKey, final ZonedDateTime now, final LocalDate today) {
-		final List<User> users 	= userRepository.findAll();
-		for (final User user : users)
-			executeRecipientNotification(schedule, "USER", String.valueOf(user.getId()), occurrenceKey);
+		final var CHUNK_SIZE = 500;
+		final var pageable = PageRequest.of(0, CHUNK_SIZE);
 
-		final List<NotificationSubscription> guestSubs = subscriptionRepository.findByUserIdIsNullAndIsActiveTrue();
-		final Set<String> guestIds = guestSubs.stream()
-				.map(NotificationSubscription::getGuestId)
-				.filter(gId -> gId != null && !gId.isBlank())
-				.collect(Collectors.toSet());
+		var lastUserId = 0L;
+		List<Object[]> userChunk;
+		do {
+			userChunk = userRepository.findUserIdAndCreatedAtChunk(lastUserId, pageable);
+			if (userChunk.isEmpty()) break;
 
-		for (final String guestId : guestIds)
-			executeRecipientNotification(schedule, "GUEST", guestId, occurrenceKey);
+			final var userIds = new ArrayList<String>(userChunk.size());
+			for (final var row : userChunk) {
+				final var uId = (Long) row[0];
+				userIds.add(String.valueOf(uId));
+				lastUserId = uId;
+			}
+			dispatchBatch(schedule, "USER", userIds, occurrenceKey);
+		} while (userChunk.size() == CHUNK_SIZE);
+
+		var lastSubId = 0L;
+		List<Object[]> guestChunk;
+		do {
+			guestChunk = subscriptionRepository.findActiveGuestIdAndCreatedAtChunk(lastSubId, pageable);
+			if (guestChunk.isEmpty()) break;
+
+			final var guestIds = new ArrayList<String>(guestChunk.size());
+			for (final var row : guestChunk) {
+				final var subId = (Long) row[0];
+				final var guestId = (String) row[1];
+				if (guestId != null && !guestId.isBlank()) {
+					guestIds.add(guestId);
+				}
+				lastSubId = subId;
+			}
+			dispatchBatch(schedule, "GUEST", guestIds, occurrenceKey);
+		} while (guestChunk.size() == CHUNK_SIZE);
 	}
 
 	private void processOffsetScheduleForRecipients(final NotificationSchedule schedule, final ZonedDateTime now, final LocalDate today) {
-		final List<Integer> offsets 	= schedule.getParsedOffsets();
+		final var offsets = schedule.getParsedOffsets();
 		if (offsets.isEmpty())
 			return;
 
-		final List<User> users 			= userRepository.findAll();
-		for (final User user : users) {
-			final Instant anchorInstant = user.getCreatedAt();
+		final var CHUNK_SIZE = 500;
+		final var pageable = PageRequest.of(0, CHUNK_SIZE);
 
-			if (anchorInstant == null) continue;
+		var lastUserId = 0L;
+		List<Object[]> userChunk;
+		do {
+			userChunk = userRepository.findUserIdAndCreatedAtChunk(lastUserId, pageable);
+			if (userChunk.isEmpty()) break;
 
-			final LocalDate anchorDate 		= anchorInstant.atZone(APP_ZONE).toLocalDate();
+			final var groupedByUserKey = new HashMap<String, List<String>>();
+			for (final var row : userChunk) {
+				final var uId = (Long) row[0];
+				final var anchorInstant = (Instant) row[1];
+				lastUserId = uId;
 
-			final long elapsedDays 			= ChronoUnit.DAYS.between(anchorDate, today);
+				if (anchorInstant == null) continue;
 
-			if (elapsedDays >= 0 && offsets.contains((int) elapsedDays)) {
-				final String occurrenceKey 	= "OFFSET_" + elapsedDays + "_" + today;
-				executeRecipientNotification(schedule, "USER", String.valueOf(user.getId()), occurrenceKey);
+				final var anchorDate = anchorInstant.atZone(APP_ZONE).toLocalDate();
+				final var elapsedDays = ChronoUnit.DAYS.between(anchorDate, today);
+
+				if (elapsedDays >= 0 && offsets.contains((int) elapsedDays)) {
+					final var occurrenceKey = "OFFSET_" + elapsedDays + "_" + today;
+					groupedByUserKey.computeIfAbsent(occurrenceKey, k -> new ArrayList<>()).add(String.valueOf(uId));
+				}
 			}
-		}
 
-		final List<NotificationSubscription> guestSubs 	= subscriptionRepository.findByUserIdIsNullAndIsActiveTrue();
-		final Set<String> processedGuestIds 			= new HashSet<>();
+			groupedByUserKey.forEach((occKey, uIds) -> dispatchBatch(schedule, "USER", uIds, occKey));
+		} while (userChunk.size() == CHUNK_SIZE);
 
-		for (final NotificationSubscription sub : guestSubs) {
-			final String guestId = sub.getGuestId();
-			if (guestId == null || guestId.isBlank() || processedGuestIds.contains(guestId))
-				continue;
-			processedGuestIds.add(guestId);
+		var lastSubId = 0L;
+		List<Object[]> guestChunk;
+		final var processedGuestIds = new HashSet<String>();
+		do {
+			guestChunk = subscriptionRepository.findActiveGuestIdAndCreatedAtChunk(lastSubId, pageable);
+			if (guestChunk.isEmpty()) break;
 
-			final Instant anchorInstant = sub.getCreatedAt();
-			if (anchorInstant == null) continue;
-			final LocalDate anchorDate = anchorInstant.atZone(APP_ZONE).toLocalDate();
-			final long elapsedDays = ChronoUnit.DAYS.between(anchorDate, today);
+			final var groupedByGuestKey = new HashMap<String, List<String>>();
+			for (final var row : guestChunk) {
+				final var subId = (Long) row[0];
+				final var guestId = (String) row[1];
+				final var anchorInstant = (Instant) row[2];
+				lastSubId = subId;
 
-			if (elapsedDays >= 0 && offsets.contains((int) elapsedDays)) {
-				final String occurrenceKey = "OFFSET_" + elapsedDays + "_" + today;
-				executeRecipientNotification(schedule, "GUEST", guestId, occurrenceKey);
+				if (guestId == null || guestId.isBlank() || processedGuestIds.contains(guestId))
+					continue;
+				processedGuestIds.add(guestId);
+
+				if (anchorInstant == null) continue;
+				final var anchorDate = anchorInstant.atZone(APP_ZONE).toLocalDate();
+				final var elapsedDays = ChronoUnit.DAYS.between(anchorDate, today);
+
+				if (elapsedDays >= 0 && offsets.contains((int) elapsedDays)) {
+					final var occurrenceKey = "OFFSET_" + elapsedDays + "_" + today;
+					groupedByGuestKey.computeIfAbsent(occurrenceKey, k -> new ArrayList<>()).add(guestId);
+				}
 			}
-		}
+
+			groupedByGuestKey.forEach((occKey, gIds) -> dispatchBatch(schedule, "GUEST", gIds, occKey));
+		} while (guestChunk.size() == CHUNK_SIZE);
 	}
 
 	private void processLoginReminderForRecipients(final NotificationSchedule schedule, final ZonedDateTime now) {
-		final int intervalMinutes = schedule.getIntervalMinutes() != null && schedule.getIntervalMinutes() > 0
+		final var intervalMinutes = schedule.getIntervalMinutes() != null && schedule.getIntervalMinutes() > 0
 				? schedule.getIntervalMinutes() : 2;
 
-		final List<User> users = userRepository.findAll();
-		for (final User user : users) {
-			final String userIdStr 			= String.valueOf(user.getId());
-			final var latestLogOpt 			= notificationLogRepository.findFirstByUserIdAndTemplateIdOrderByCreatedAtDesc(userIdStr, schedule.getTemplate().getId());
-			if (isEligibleForLoginReminder(latestLogOpt, now.toInstant(), intervalMinutes)) {
-				final String lastLogIdStr 	= latestLogOpt.map(l -> String.valueOf(l.getId())).orElse("0");
-				final String occurrenceKey 	= "LOGIN_" + lastLogIdStr + "_" + now.toInstant().toEpochMilli();
-				executeRecipientNotification(schedule, "USER", userIdStr, occurrenceKey);
+		final var CHUNK_SIZE = 500;
+		final var pageable = PageRequest.of(0, CHUNK_SIZE);
+
+		var lastUserId = 0L;
+		List<Object[]> userChunk;
+		do {
+			userChunk = userRepository.findUserIdAndCreatedAtChunk(lastUserId, pageable);
+			if (userChunk.isEmpty()) break;
+
+			for (final var row : userChunk) {
+				final var uId = (Long) row[0];
+				lastUserId = uId;
+				final var userIdStr = String.valueOf(uId);
+
+				final var latestLogOpt = notificationLogRepository.findFirstByUserIdAndTemplateIdOrderByCreatedAtDesc(userIdStr, schedule.getTemplate().getId());
+				if (isEligibleForLoginReminder(latestLogOpt, now.toInstant(), intervalMinutes)) {
+					final var lastLogIdStr = latestLogOpt.map(l -> String.valueOf(l.getId())).orElse("0");
+					final var occurrenceKey = "LOGIN_" + lastLogIdStr + "_" + now.toInstant().toEpochMilli();
+					executeRecipientNotification(schedule, "USER", userIdStr, occurrenceKey);
+				}
+			}
+		} while (userChunk.size() == CHUNK_SIZE);
+
+		var lastSubId = 0L;
+		List<Object[]> guestChunk;
+		final var processedGuestIds = new HashSet<String>();
+		do {
+			guestChunk = subscriptionRepository.findActiveGuestIdAndCreatedAtChunk(lastSubId, pageable);
+			if (guestChunk.isEmpty()) break;
+
+			for (final var row : guestChunk) {
+				final var subId = (Long) row[0];
+				final var guestId = (String) row[1];
+				lastSubId = subId;
+
+				if (guestId == null || guestId.isBlank() || processedGuestIds.contains(guestId))
+					continue;
+				processedGuestIds.add(guestId);
+
+				final var latestLogOpt = notificationLogRepository.findFirstByGuestIdAndTemplateIdOrderByCreatedAtDesc(guestId, schedule.getTemplate().getId());
+				if (isEligibleForLoginReminder(latestLogOpt, now.toInstant(), intervalMinutes)) {
+					final var lastLogIdStr = latestLogOpt.map(l -> String.valueOf(l.getId())).orElse("0");
+					final var occurrenceKey = "LOGIN_" + lastLogIdStr + "_" + now.toInstant().toEpochMilli();
+					executeRecipientNotification(schedule, "GUEST", guestId, occurrenceKey);
+				}
+			}
+		} while (guestChunk.size() == CHUNK_SIZE);
+	}
+
+	private void dispatchBatch(final NotificationSchedule schedule, final String recipientType, final List<String> recipientIds, final String occurrenceKey) {
+		if (recipientIds == null || recipientIds.isEmpty())
+			return;
+
+		final var newExecutions = new ArrayList<NotificationScheduleExecution>();
+		final var eligibleIds = new ArrayList<String>();
+
+		for (final var recipientId : recipientIds) {
+			final var alreadyExecuted = executionRepository.existsByScheduleIdAndRecipientTypeAndRecipientIdAndOccurrenceKey(
+					schedule.getId(), recipientType, recipientId, occurrenceKey
+			);
+			if (alreadyExecuted)
+				continue;
+
+			final var execution = NotificationScheduleExecution.builder()
+					.scheduleId(schedule.getId())
+					.recipientType(recipientType)
+					.recipientId(recipientId)
+					.occurrenceKey(occurrenceKey)
+					.executedAt(Instant.now())
+					.status("PENDING")
+					.build();
+
+			try {
+				newExecutions.add(executionRepository.save(execution));
+				eligibleIds.add(recipientId);
+			} catch (final DataIntegrityViolationException e) {
+				log.debug("Duplicate execution detected by DB constraint for schedule {} recipient {}: {}", schedule.getId(), recipientId, e.getMessage());
 			}
 		}
 
-		final List<NotificationSubscription> guestSubs 		= subscriptionRepository.findByUserIdIsNullAndIsActiveTrue();
-		final Set<String> processedGuestIds = new HashSet<>();
+		if (eligibleIds.isEmpty())
+			return;
 
-		for (final NotificationSubscription sub : guestSubs) {
-			final String guestId = sub.getGuestId();
-			if (guestId == null || guestId.isBlank() || processedGuestIds.contains(guestId))
-				continue;
-			processedGuestIds.add(guestId);
+		try {
+			final var sendRequest = SendNotificationRequestDto.builder()
+					.templateId(schedule.getTemplate().getId())
+					.userIds("USER".equals(recipientType) ? eligibleIds.stream().map(Long::parseLong).toList() : null)
+					.guestIds("GUEST".equals(recipientType) ? eligibleIds : null)
+					.build();
 
-			final var latestLogOpt = notificationLogRepository.findFirstByGuestIdAndTemplateIdOrderByCreatedAtDesc(guestId, schedule.getTemplate().getId());
-			if (isEligibleForLoginReminder(latestLogOpt, now.toInstant(), intervalMinutes)) {
-				final String lastLogIdStr = latestLogOpt.map(l -> String.valueOf(l.getId())).orElse("0");
-				final String occurrenceKey = "LOGIN_" + lastLogIdStr + "_" + now.toInstant().toEpochMilli();
-				executeRecipientNotification(schedule, "GUEST", guestId, occurrenceKey);
+			notificationService.sendNotification(sendRequest);
+
+			for (final var exec : newExecutions) {
+				exec.setStatus("SUCCESS");
 			}
+			executionRepository.saveAll(newExecutions);
+		} catch (final Exception e) {
+			log.error("Failed executing batch push for scheduleId: {}, recipientType: {}, count: {}", schedule.getId(), recipientType, eligibleIds.size(), e);
+			for (final var exec : newExecutions) {
+				exec.setStatus("FAILED");
+			}
+			executionRepository.saveAll(newExecutions);
 		}
 	}
 
@@ -276,26 +401,26 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 		if (latestLogOpt.isEmpty())
 			return true;
 
-		final NotificationLog latestLog = latestLogOpt.get();
+		final var latestLog = latestLogOpt.get();
 		if (!latestLog.isRead())
 			return false;
 
-		final Instant referenceTime = latestLog.getReadAt() != null ? latestLog.getReadAt() : latestLog.getCreatedAt();
+		final var referenceTime = latestLog.getReadAt() != null ? latestLog.getReadAt() : latestLog.getCreatedAt();
 		if (referenceTime == null || referenceTime.isAfter(nowInstant))
 			return false;
-		final long minutesSinceLast = Duration.between(referenceTime, nowInstant).toMinutes();
+		final var minutesSinceLast 			= Duration.between(referenceTime, nowInstant).toMinutes();
 		return minutesSinceLast >= intervalMinutes;
 	}
 
 	private void executeRecipientNotification(final NotificationSchedule schedule, final String recipientType, final String recipientId, final String occurrenceKey) {
-		final boolean alreadyExecuted 	= executionRepository.existsByScheduleIdAndRecipientTypeAndRecipientIdAndOccurrenceKey(
+		final var alreadyExecuted 			= executionRepository.existsByScheduleIdAndRecipientTypeAndRecipientIdAndOccurrenceKey(
 				schedule.getId(), recipientType, recipientId, occurrenceKey
 				);
 
 		if (alreadyExecuted)
 			return;
 
-		NotificationScheduleExecution execution = NotificationScheduleExecution.builder()
+		var execution = NotificationScheduleExecution.builder()
 				.scheduleId(schedule.getId())
 				.recipientType(recipientType)
 				.recipientId(recipientId)
@@ -312,7 +437,7 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 		}
 
 		try {
-			final SendNotificationRequestDto sendRequest 	= SendNotificationRequestDto.builder()
+			final var sendRequest 	= SendNotificationRequestDto.builder()
 					.templateId(schedule.getTemplate().getId())
 					.userIds("USER".equals(recipientType) ? List.of(Long.parseLong(recipientId)) : null)
 					.guestIds("GUEST".equals(recipientType) ? List.of(recipientId) : null)
@@ -336,7 +461,7 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 		if (request.getScheduleType() == null)
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Schedule type is required");
 
-		final ScheduleType type = request.getScheduleType();
+		final var type = request.getScheduleType();
 
 		switch (type) {
 		case DAILY:
@@ -346,7 +471,7 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 		case OFFSET:
 			if (request.getOffsets() == null || request.getOffsets().isEmpty())
 				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Offsets list cannot be empty for OFFSET schedule");
-			for (final Integer offset : request.getOffsets())
+			for (final var offset : request.getOffsets())
 				if (offset == null || offset < 0)
 					throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Offset values cannot be negative or null");
 			break;

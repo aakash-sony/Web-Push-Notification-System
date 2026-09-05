@@ -27,17 +27,12 @@ public class AdminServiceImpl implements AdminService {
 	private final UserRepository 						userRepository;
 	private final NotificationSubscriptionRepository 	subscriptionRepository;
 	private final NotificationMasterRepository 			notificationMasterRepository;
-
-	@Value("${admin.username}")
-	private String adminUsername;
+	private final com.fcm.webpush.service.SessionValidationService sessionValidationService;
+	private final jakarta.servlet.http.HttpServletRequest httpRequest;
 
 	@Override
-	public void verifyAdminAuthorization(final String username) {
-		if (username == null || username.isBlank())
-			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User is not authenticated");
-
-		if (!adminUsername.equals(username))
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied: Admin privileges required");
+	public void verifyAdminAuthorization() {
+		sessionValidationService.validateAdminSession(httpRequest);
 	}
 
 	@Override

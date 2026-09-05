@@ -8,7 +8,7 @@ import com.fcm.webpush.dto.response.UserResponseDto;
 
 public interface AdminService {
 
-	void verifyAdminAuthorization(String username);
+	void verifyAdminAuthorization();
 
 	List<GuestResponseDto> getAllGuests();
 
