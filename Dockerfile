@@ -1,7 +1,7 @@
 # ==========================================
 # Stage 1: Build the application JAR
 # ==========================================
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM eclipse-temurin:25-jdk-alpine AS builder
 WORKDIR /workspace
 
 # Copy Maven wrapper and POM
@@ -22,7 +22,7 @@ RUN ./mvnw clean package -DskipTests -B
 # ==========================================
 # Stage 2: Minimal, secure runtime container
 # ==========================================
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
 
 # Run as non-root user for security best practices
