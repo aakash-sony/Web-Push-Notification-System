@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username_lower ON users (LOWER(username));
+CREATE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
 
 -- 3. Notification Subscriptions (FCM Tokens)
 CREATE TABLE IF NOT EXISTS notification_subscriptions (
