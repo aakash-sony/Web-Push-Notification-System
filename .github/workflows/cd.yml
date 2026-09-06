@@ -1,0 +1,131 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      trigger_deploy:
+        description: 'Deploy to Render after image build?'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-image:
+    name: Build & Publish Image to GHCR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-to-render:
+    name: Trigger Render Deployment
+    needs: publish-image
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.trigger_deploy == 'true'
+
+    steps:
+      - name: Trigger Render Deploy Hook
+        env:
+          DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOK_URL secret is not configured. Skipping automated deployment trigger."
+            echo "To enable auto-deploy, add RENDER_DEPLOY_HOOK_URL to your repository GitHub Secrets."
+            exit 0
+          fi
+
+          echo "Triggering Render deployment via deploy hook..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$DEPLOY_HOOK")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "Response HTTP Code: $HTTP_CODE"
+          echo "Response Body: $BODY"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Render deploy hook failed with status $HTTP_CODE: $BODY"
+            exit 1
+          fi
+
+          echo "Deployment hook successfully triggered on Render!"
+
+  smoke-test:
+    name: Deployment Smoke Test
+    needs: deploy-to-render
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.trigger_deploy == 'true'
+
+    steps:
+      - name: Verify Live Service Health
+        env:
+          SERVICE_URL: ${{ secrets.RENDER_SERVICE_URL }}
+        run: |
+          if [ -z "$SERVICE_URL" ]; then
+            echo "::notice::RENDER_SERVICE_URL secret not configured. Skipping live health probe."
+            echo "Set RENDER_SERVICE_URL (e.g., https://webpush-backend.onrender.com) in GitHub Secrets to enable automated health validation."
+            exit 0
+          fi
+
+          # Strip trailing slash if present
+          CLEAN_URL="${SERVICE_URL%/}"
+          HEALTH_URL="$CLEAN_URL/health"
+
+          echo "Polling $HEALTH_URL (allowing up to 180s for Render container boot/cold start)..."
+          
+          SUCCESS=false
+          for i in $(seq 1 36); do
+            HTTP_CODE=$(curl -s -m 5 -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Health check passed on attempt $i! Endpoint returned HTTP 200 OK."
+              SUCCESS=true
+              break
+            fi
+            echo "Attempt $i: received HTTP $HTTP_CODE. Retrying in 5 seconds..."
+            sleep 5
+          done
+
+          if [ "$SUCCESS" = "false" ]; then
+            echo "::error::Health check timed out after 180s for $HEALTH_URL"
+            exit 1
+          fi
