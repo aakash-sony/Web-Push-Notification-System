@@ -20,4 +20,10 @@ public class SendNotificationRequestDto {
 
 	@NotNull(message = "Template ID is required")
 	private Long templateId;
+
+	private String title;
+
+	private String body;
+
+	private String bodyTemplate;
 }

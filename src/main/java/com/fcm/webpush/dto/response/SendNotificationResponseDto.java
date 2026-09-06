@@ -18,4 +18,6 @@ public class SendNotificationResponseDto {
 	private int 				tokensFound;
 	private int 				notificationsSent;
 	private int 				notificationsFailed;
+	private String 				title;
+	private String 				body;
 }

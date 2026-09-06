@@ -238,6 +238,16 @@ public class NotificationServiceImpl implements NotificationService {
 				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Some selected guests do not exist: " + missingGuestIds);
 		}
 
+		final var finalTitle = (request.getTitle() != null && !request.getTitle().isBlank())
+				? request.getTitle().trim()
+				: template.getTitle();
+
+		final var finalBody = (request.getBody() != null && !request.getBody().isBlank())
+				? request.getBody().trim()
+				: (request.getBodyTemplate() != null && !request.getBodyTemplate().isBlank())
+						? request.getBodyTemplate().trim()
+						: template.getBodyTemplate();
+
 		final var logsToSave = new ArrayList<NotificationLog>();
 
 		final var templateCodeStr = template.getCode() != null ? template.getCode().name() : null;
@@ -246,8 +256,8 @@ public class NotificationServiceImpl implements NotificationService {
 			logsToSave.add(NotificationLog.builder()
 					.userId(String.valueOf(uId))
 					.templateId(template.getId())
-					.title(template.getTitle())
-					.body(template.getBodyTemplate())
+					.title(finalTitle)
+					.body(finalBody)
 					.code(templateCodeStr)
 					.isRead(false)
 					.createdAt(Instant.now())
@@ -257,8 +267,8 @@ public class NotificationServiceImpl implements NotificationService {
 			logsToSave.add(NotificationLog.builder()
 					.guestId(gId)
 					.templateId(template.getId())
-					.title(template.getTitle())
-					.body(template.getBodyTemplate())
+					.title(finalTitle)
+					.body(finalBody)
 					.code(templateCodeStr)
 					.isRead(false)
 					.createdAt(Instant.now())
@@ -285,14 +295,16 @@ public class NotificationServiceImpl implements NotificationService {
 			guestSubs.forEach(sub -> tokensToNotify.add(sub.getFcmToken()));
 		}
 
-		log.info("Notification send requested. Template ID: {}, Users selected: {}, Guests selected: {}, Tokens found: {}",
-				template.getId(), distinctUserIds.size(), distinctGuestIds.size(), tokensToNotify.size());
+		log.info("Notification send requested. Template ID: {}, Title: '{}', Users selected: {}, Guests selected: {}, Tokens found: {}",
+				template.getId(), finalTitle, distinctUserIds.size(), distinctGuestIds.size(), tokensToNotify.size());
 
 		if (tokensToNotify.isEmpty())
 			return SendNotificationResponseDto.builder()
 					.message("No active FCM tokens found for selected recipients")
 					.status("NO_TOKENS_FOUND")
 					.templateId(template.getId())
+					.title(finalTitle)
+					.body(finalBody)
 					.usersSelected(distinctUserIds.size())
 					.guestsSelected(distinctGuestIds.size())
 					.tokensFound(0)
@@ -309,9 +321,12 @@ public class NotificationServiceImpl implements NotificationService {
 			final var batch = tokenList.subList(i, Math.min(i + FCM_BATCH_SIZE, tokenList.size()));
 			final var message = MulticastMessage.builder()
 					.setNotification(Notification.builder()
-							.setTitle(template.getTitle())
-							.setBody(template.getBodyTemplate())
+							.setTitle(finalTitle)
+							.setBody(finalBody)
 							.build())
+					.putData("title", finalTitle)
+					.putData("body", finalBody)
+					.putData("templateId", String.valueOf(template.getId()))
 					.addAllTokens(batch)
 					.build();
 
@@ -358,6 +373,8 @@ public class NotificationServiceImpl implements NotificationService {
 				.message(responseMessage)
 				.status(status)
 				.templateId(template.getId())
+				.title(finalTitle)
+				.body(finalBody)
 				.usersSelected(distinctUserIds.size())
 				.guestsSelected(distinctGuestIds.size())
 				.tokensFound(tokenList.size())
