@@ -18,17 +18,17 @@ import lombok.NoArgsConstructor;
 @Builder
 public class NotificationScheduleResponseDto {
 
-	private Long id;
-	private Long templateId;
-	private String templateTitle;
-	private ScheduleType scheduleType;
+	private Long 			id;
+	private Long 			templateId;
+	private String 			templateTitle;
+	private ScheduleType 	scheduleType;
 
 	@JsonFormat(pattern = "HH:mm")
-	private LocalTime timeOfDay;
+	private LocalTime 		timeOfDay;
 
-	private List<Integer> offsets;
-	private Integer intervalMinutes;
-	private boolean isActive;
-	private Instant createdAt;
-	private Instant updatedAt;
+	private List<Integer> 	offsets;
+	private Integer 		intervalMinutes;
+	private boolean 		isActive;
+	private Instant 		createdAt;
+	private Instant 		updatedAt;
 }

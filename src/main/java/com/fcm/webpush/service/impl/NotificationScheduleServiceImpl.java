@@ -11,13 +11,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +27,6 @@ import com.fcm.webpush.dto.response.NotificationScheduleResponseDto;
 import com.fcm.webpush.entity.NotificationLog;
 import com.fcm.webpush.entity.NotificationSchedule;
 import com.fcm.webpush.entity.NotificationScheduleExecution;
-import com.fcm.webpush.entity.NotificationSubscription;
 import com.fcm.webpush.repository.NotificationLogRepository;
 import com.fcm.webpush.repository.NotificationMasterRepository;
 import com.fcm.webpush.repository.NotificationScheduleExecutionRepository;
@@ -79,7 +76,7 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 		if (request.getOffsets() != null)
 			schedule.setParsedOffsets(normalizeOffsets(request.getOffsets()));
 
-		final var saved = scheduleRepository.save(schedule);
+		final var saved = scheduleRepository.saveAndFlush(schedule);
 		return mapToResponseDto(saved);
 	}
 
@@ -123,7 +120,8 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 		else
 			schedule.setOffsets(null);
 
-		final var updated = scheduleRepository.save(schedule);
+		schedule.setUpdatedAt(Instant.now());
+		final var updated = scheduleRepository.saveAndFlush(schedule);
 		return mapToResponseDto(updated);
 	}
 
@@ -134,8 +132,17 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Notification schedule not found with id: " + id));
 
 		schedule.setActive(active);
-		final var updated = scheduleRepository.save(schedule);
+		schedule.setUpdatedAt(Instant.now());
+		final var updated = scheduleRepository.saveAndFlush(schedule);
 		return mapToResponseDto(updated);
+	}
+
+	@Override
+	@Transactional
+	public void deleteSchedule(final Long id) {
+		final var schedule 			= scheduleRepository.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Notification schedule not found with id: " + id));
+		scheduleRepository.delete(schedule);
+		log.info("EVENT=SCHEDULE_DELETED Deleted notification schedule id: {}", id);
 	}
 
 	@Override
@@ -185,20 +192,20 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 	}
 
 	private void processScheduleForRecipients(final NotificationSchedule schedule, final String occurrenceKey, final ZonedDateTime now, final LocalDate today) {
-		final var CHUNK_SIZE = 500;
-		final var pageable = PageRequest.of(0, CHUNK_SIZE);
+		final var CHUNK_SIZE 		= 500;
+		final var pageable 			= PageRequest.of(0, CHUNK_SIZE);
 
 		var lastUserId = 0L;
 		List<Object[]> userChunk;
 		do {
-			userChunk = userRepository.findUserIdAndCreatedAtChunk(lastUserId, pageable);
+			userChunk 				= userRepository.findUserIdAndCreatedAtChunk(lastUserId, pageable);
 			if (userChunk.isEmpty()) break;
 
-			final var userIds = new ArrayList<String>(userChunk.size());
+			final var userIds 		= new ArrayList<String>(userChunk.size());
 			for (final var row : userChunk) {
-				final var uId = (Long) row[0];
+				final var uId 		= (Long) row[0];
 				userIds.add(String.valueOf(uId));
-				lastUserId = uId;
+				lastUserId 			= uId;
 			}
 			dispatchBatch(schedule, "USER", userIds, occurrenceKey);
 		} while (userChunk.size() == CHUNK_SIZE);
@@ -213,9 +220,8 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 			for (final var row : guestChunk) {
 				final var subId = (Long) row[0];
 				final var guestId = (String) row[1];
-				if (guestId != null && !guestId.isBlank()) {
+				if (guestId != null && !guestId.isBlank())
 					guestIds.add(guestId);
-				}
 				lastSubId = subId;
 			}
 			dispatchBatch(schedule, "GUEST", guestIds, occurrenceKey);
@@ -345,13 +351,12 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 		if (recipientIds == null || recipientIds.isEmpty())
 			return;
 
-		final var newExecutions = new ArrayList<NotificationScheduleExecution>();
-		final var eligibleIds = new ArrayList<String>();
+		final var newExecutions 			= new ArrayList<NotificationScheduleExecution>();
+		final var eligibleIds 				= new ArrayList<String>();
 
 		for (final var recipientId : recipientIds) {
-			final var alreadyExecuted = executionRepository.existsByScheduleIdAndRecipientTypeAndRecipientIdAndOccurrenceKey(
-					schedule.getId(), recipientType, recipientId, occurrenceKey
-			);
+			final var alreadyExecuted 		= executionRepository.existsByScheduleIdAndRecipientTypeAndRecipientIdAndOccurrenceKey(schedule.getId(), recipientType, recipientId, occurrenceKey);
+
 			if (alreadyExecuted)
 				continue;
 
@@ -376,7 +381,7 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 			return;
 
 		try {
-			final var sendRequest = SendNotificationRequestDto.builder()
+			final var sendRequest 			= SendNotificationRequestDto.builder()
 					.templateId(schedule.getTemplate().getId())
 					.userIds("USER".equals(recipientType) ? eligibleIds.stream().map(Long::parseLong).toList() : null)
 					.guestIds("GUEST".equals(recipientType) ? eligibleIds : null)
@@ -384,15 +389,13 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 
 			notificationService.sendNotification(sendRequest);
 
-			for (final var exec : newExecutions) {
+			for (final var exec : newExecutions)
 				exec.setStatus("SUCCESS");
-			}
 			executionRepository.saveAll(newExecutions);
 		} catch (final Exception e) {
 			log.error("Failed executing batch push for scheduleId: {}, recipientType: {}, count: {}", schedule.getId(), recipientType, eligibleIds.size(), e);
-			for (final var exec : newExecutions) {
+			for (final var exec : newExecutions)
 				exec.setStatus("FAILED");
-			}
 			executionRepository.saveAll(newExecutions);
 		}
 	}
@@ -405,7 +408,7 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 		if (!latestLog.isRead())
 			return false;
 
-		final var referenceTime = latestLog.getReadAt() != null ? latestLog.getReadAt() : latestLog.getCreatedAt();
+		final var referenceTime 			= latestLog.getReadAt() != null ? latestLog.getReadAt() : latestLog.getCreatedAt();
 		if (referenceTime == null || referenceTime.isAfter(nowInstant))
 			return false;
 		final var minutesSinceLast 			= Duration.between(referenceTime, nowInstant).toMinutes();
@@ -413,9 +416,7 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 	}
 
 	private void executeRecipientNotification(final NotificationSchedule schedule, final String recipientType, final String recipientId, final String occurrenceKey) {
-		final var alreadyExecuted 			= executionRepository.existsByScheduleIdAndRecipientTypeAndRecipientIdAndOccurrenceKey(
-				schedule.getId(), recipientType, recipientId, occurrenceKey
-				);
+		final var alreadyExecuted 			= executionRepository.existsByScheduleIdAndRecipientTypeAndRecipientIdAndOccurrenceKey(schedule.getId(), recipientType, recipientId, occurrenceKey);
 
 		if (alreadyExecuted)
 			return;
@@ -430,14 +431,14 @@ public class NotificationScheduleServiceImpl implements NotificationScheduleServ
 				.build();
 
 		try {
-			execution 			= executionRepository.save(execution);
+			execution 						= executionRepository.save(execution);
 		} catch (final DataIntegrityViolationException e) {
 			log.info("Schedule execution already recorded by concurrent worker for scheduleId: {}, recipient: {}", schedule.getId(), recipientId);
 			return;
 		}
 
 		try {
-			final var sendRequest 	= SendNotificationRequestDto.builder()
+			final var sendRequest 			= SendNotificationRequestDto.builder()
 					.templateId(schedule.getTemplate().getId())
 					.userIds("USER".equals(recipientType) ? List.of(Long.parseLong(recipientId)) : null)
 					.guestIds("GUEST".equals(recipientType) ? List.of(recipientId) : null)

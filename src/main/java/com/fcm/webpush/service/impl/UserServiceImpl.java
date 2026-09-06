@@ -22,16 +22,21 @@ public class UserServiceImpl implements UserService {
 
 	@Override
 	public UserResponseDto registerUser(final UserRegistrationRequestDto request) {
+		if (request.getUsername() == null || request.getUsername().trim().isEmpty())
+			throw new IllegalArgumentException("Username is required");
+
+		final var trimmedUsername = request.getUsername().trim();
+
 		if (!request.getPassword().equals(request.getConfirmPassword()))
 			throw new IllegalArgumentException("Password and confirm password do not match");
 
-		if (userRepository.existsByUsername(request.getUsername()))
+		if (userRepository.existsByUsernameIgnoreCase(trimmedUsername))
 			throw new IllegalArgumentException("Username is already taken");
 
 		final var encodedPassword = passwordEncoder.encode(request.getPassword());
 
 		final var user = User.builder()
-				.username(request.getUsername())
+				.username(trimmedUsername)
 				.password(encodedPassword)
 				.build();
 
@@ -42,7 +47,13 @@ public class UserServiceImpl implements UserService {
 
 	@Override
 	public UserResponseDto loginUser(final UserLoginRequestDto request) {
-		final var user 			= userRepository.findByUsername(request.getUsername()).orElseThrow(() -> new IllegalArgumentException("Invalid username or password"));
+		if (request.getUsername() == null || request.getUsername().trim().isEmpty())
+			throw new IllegalArgumentException("Invalid username or password");
+
+		final var trimmedUsername = request.getUsername().trim();
+
+		final var user = userRepository.findByUsernameIgnoreCase(trimmedUsername)
+				.orElseThrow(() -> new IllegalArgumentException("Invalid username or password"));
 
 		if (!passwordEncoder.matches(request.getPassword(), user.getPassword()))
 			throw new IllegalArgumentException("Invalid username or password");

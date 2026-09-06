@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
@@ -72,13 +73,13 @@ public class NotificationServiceImpl implements NotificationService {
 		}
 
 		final var finalGuestId = targetGuestId;
-		final var targetUserId = userId != null && !userId.isBlank() ? userId : null;
+		final var targetUserId = userId != null && !userId.isBlank() ? userId.trim() : null;
 
 		final var subscription = subscriptionRepository.findByFcmToken(request.getFcmToken())
 				.map(existing -> {
 					final var oldToken = existing.getFcmToken();
 					existing.setGuestId(finalGuestId);
-					existing.setUserId(targetUserId); // Explicitly set targetUserId (null if guest)
+					existing.setUserId(targetUserId);
 					existing.setDeviceType(request.getDeviceType());
 					existing.setActive(true);
 					log.info("EVENT=SUBSCRIPTION_UPDATED Updated subscription (ID {}) for guestId '{}', userId '{}', safeToken '{}'",
@@ -118,7 +119,7 @@ public class NotificationServiceImpl implements NotificationService {
 	@Transactional
 	public void associateGuestWithUser(final String guestId, final String userId) {
 		final var subscriptions = subscriptionRepository.findAllByGuestId(guestId);
-		subscriptions.forEach(subscription -> subscription.setUserId(userId));
+		subscriptions.forEach(subscription -> subscription.setUserId(userId != null ? userId.trim() : null));
 		subscriptionRepository.saveAll(subscriptions);
 		log.info("EVENT=USER_ASSOCIATED Associated guestId '{}' with userId '{}' across {} subscriptions", guestId, userId, subscriptions.size());
 	}
@@ -159,6 +160,40 @@ public class NotificationServiceImpl implements NotificationService {
 		if (token == null) return "null";
 		if (token.length() <= 10) return "***";
 		return token.substring(0, 6) + "..." + token.substring(token.length() - 4);
+	}
+
+	public Set<String> resolveUserIdentifiers(final String userIdentifier) {
+		final var identifiers = new HashSet<String>();
+		if (userIdentifier == null || userIdentifier.trim().isEmpty()) {
+			return identifiers;
+		}
+		final var trimmed = userIdentifier.trim();
+		identifiers.add(trimmed);
+
+		try {
+			final var id = Long.parseLong(trimmed);
+			userRepository.findById(id).ifPresent(user -> {
+				identifiers.add(String.valueOf(user.getId()));
+				if (user.getUsername() != null)
+					identifiers.add(user.getUsername());
+			});
+		} catch (final NumberFormatException ignored) {
+			userRepository.findByUsernameIgnoreCase(trimmed).ifPresent(user -> {
+				identifiers.add(String.valueOf(user.getId()));
+				if (user.getUsername() != null)
+					identifiers.add(user.getUsername());
+			});
+		}
+
+		if (identifiers.size() == 1) {
+			userRepository.findByUsernameIgnoreCase(trimmed).ifPresent(user -> {
+				identifiers.add(String.valueOf(user.getId()));
+				if (user.getUsername() != null)
+					identifiers.add(user.getUsername());
+			});
+		}
+
+		return identifiers;
 	}
 
 	@Override
@@ -205,7 +240,7 @@ public class NotificationServiceImpl implements NotificationService {
 
 		final var logsToSave = new ArrayList<NotificationLog>();
 
-		final var templateCodeStr 			= template.getCode() != null ? template.getCode().name() : null;
+		final var templateCodeStr = template.getCode() != null ? template.getCode().name() : null;
 
 		for (final var uId : distinctUserIds)
 			logsToSave.add(NotificationLog.builder()
@@ -237,8 +272,11 @@ public class NotificationServiceImpl implements NotificationService {
 		final var tokensToNotify = new HashSet<String>();
 
 		if (!distinctUserIds.isEmpty()) {
-			final var userIdsStr 					= distinctUserIds.stream().map(String::valueOf).toList();
-			final var userSubs 	= subscriptionRepository.findByUserIdInAndIsActiveTrue(userIdsStr);
+			final var allUserLookupIds = new HashSet<String>();
+			for (final var uId : distinctUserIds) {
+				allUserLookupIds.addAll(resolveUserIdentifiers(String.valueOf(uId)));
+			}
+			final var userSubs = subscriptionRepository.findByUserIdInAndIsActiveTrue(allUserLookupIds);
 			userSubs.forEach(sub -> tokensToNotify.add(sub.getFcmToken()));
 		}
 
@@ -354,7 +392,8 @@ public class NotificationServiceImpl implements NotificationService {
 	public Page<NotificationLogResponseDto> getUserNotifications(final String userId, final Pageable pageable) {
 		if (userId == null || userId.trim().isEmpty())
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User ID is required");
-		final var logs = notificationLogRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
+		final var userIds = resolveUserIdentifiers(userId);
+		final var logs = notificationLogRepository.findByUserIdInOrderByCreatedAtDesc(userIds, pageable);
 		return logs.map(this::mapToLogResponseDto);
 	}
 
@@ -363,7 +402,7 @@ public class NotificationServiceImpl implements NotificationService {
 		if (guestId == null || guestId.trim().isEmpty())
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Guest ID is required");
 
-		final var logs = notificationLogRepository.findByGuestIdOrderByCreatedAtDesc(guestId, pageable);
+		final var logs = notificationLogRepository.findByGuestIdOrderByCreatedAtDesc(guestId.trim(), pageable);
 		return logs.map(this::mapToLogResponseDto);
 	}
 
@@ -371,7 +410,8 @@ public class NotificationServiceImpl implements NotificationService {
 	public UnreadCountResponseDto getUserUnreadCount(final String userId) {
 		if (userId == null || userId.trim().isEmpty())
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User ID is required");
-		final var count = notificationLogRepository.countByUserIdAndIsReadFalse(userId);
+		final var userIds = resolveUserIdentifiers(userId);
+		final var count = notificationLogRepository.countByUserIdInAndIsReadFalse(userIds);
 		return new UnreadCountResponseDto(count);
 	}
 
@@ -380,7 +420,7 @@ public class NotificationServiceImpl implements NotificationService {
 		if (guestId == null || guestId.trim().isEmpty())
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Guest ID is required");
 
-		final var count = notificationLogRepository.countByGuestIdAndIsReadFalse(guestId);
+		final var count = notificationLogRepository.countByGuestIdAndIsReadFalse(guestId.trim());
 		return new UnreadCountResponseDto(count);
 	}
 
@@ -393,10 +433,15 @@ public class NotificationServiceImpl implements NotificationService {
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Notification not found"));
 
 		var isOwner = false;
-		if (requesterUserId != null && requesterUserId.equals(logEntry.getUserId()))
+		if (requesterUserId != null && !requesterUserId.isBlank()) {
+			final var userIds = resolveUserIdentifiers(requesterUserId);
+			if (logEntry.getUserId() != null && userIds.contains(logEntry.getUserId())) {
+				isOwner = true;
+			}
+		}
+		if (requesterGuestId != null && requesterGuestId.trim().equals(logEntry.getGuestId())) {
 			isOwner = true;
-		if (requesterGuestId != null && requesterGuestId.equals(logEntry.getGuestId()))
-			isOwner = true;
+		}
 
 		if (!isOwner)
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied: Notification does not belong to the requester");

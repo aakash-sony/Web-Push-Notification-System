@@ -2,10 +2,7 @@ package com.fcm.webpush.service.impl;
 
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import com.fcm.webpush.dto.response.GuestResponseDto;
 import com.fcm.webpush.dto.response.NotificationTemplateResponseDto;
@@ -17,7 +14,9 @@ import com.fcm.webpush.repository.NotificationMasterRepository;
 import com.fcm.webpush.repository.NotificationSubscriptionRepository;
 import com.fcm.webpush.repository.UserRepository;
 import com.fcm.webpush.service.AdminService;
+import com.fcm.webpush.service.SessionValidationService;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -27,8 +26,8 @@ public class AdminServiceImpl implements AdminService {
 	private final UserRepository 						userRepository;
 	private final NotificationSubscriptionRepository 	subscriptionRepository;
 	private final NotificationMasterRepository 			notificationMasterRepository;
-	private final com.fcm.webpush.service.SessionValidationService sessionValidationService;
-	private final jakarta.servlet.http.HttpServletRequest httpRequest;
+	private final SessionValidationService 				sessionValidationService;
+	private final HttpServletRequest 					httpRequest;
 
 	@Override
 	public void verifyAdminAuthorization() {

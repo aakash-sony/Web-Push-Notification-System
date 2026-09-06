@@ -14,7 +14,7 @@ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 @RequiredArgsConstructor
 public class NotificationScheduler {
 
-	private final NotificationScheduleService notificationScheduleService;
+	private final NotificationScheduleService 		notificationScheduleService;
 
 	@Scheduled(fixedDelay = 120000)
 	@SchedulerLock(name = "runScheduledNotifications", lockAtLeastFor = "30s", lockAtMostFor = "15m")

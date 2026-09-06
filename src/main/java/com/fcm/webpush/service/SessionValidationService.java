@@ -14,12 +14,11 @@ public class SessionValidationService {
 	private String adminUsername;
 
 	public String getAuthenticatedUsername(final HttpServletRequest request) {
-		if (request == null) {
+		if (request == null)
 			return null;
-		}
-		final var session = request.getSession(false);
+		final var session 			= request.getSession(false);
 		if (session != null) {
-			final var sessionUser = (String) session.getAttribute("username");
+			final var sessionUser 	= (String) session.getAttribute("username");
 			if (sessionUser != null && !sessionUser.isBlank())
 				return sessionUser.trim();
 		}
@@ -28,11 +27,11 @@ public class SessionValidationService {
 	}
 
 	public void validateAdminSession(final HttpServletRequest request) {
-		final var effectiveUsername = getAuthenticatedUsername(request);
+		final var effectiveUsername 	= getAuthenticatedUsername(request);
 		if (effectiveUsername == null || effectiveUsername.isBlank())
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User is not authenticated. Please log in.");
 
-		if (!adminUsername.equals(effectiveUsername))
+		if (!adminUsername.equalsIgnoreCase(effectiveUsername))
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied: Admin privileges required");
 	}
 
@@ -47,11 +46,11 @@ public class SessionValidationService {
 		final var session = request.getSession(false);
 		final var sessionUserId = session != null && session.getAttribute("userId") != null
 				? String.valueOf(session.getAttribute("userId"))
-				: null;
+						: null;
 
-		final var isMatched = targetUserId.equals(effectiveUsername)
-				|| (sessionUserId != null && targetUserId.equals(sessionUserId))
-				|| adminUsername.equals(effectiveUsername);
+		final var isMatched = targetUserId.equalsIgnoreCase(effectiveUsername)
+				|| sessionUserId != null && targetUserId.equalsIgnoreCase(sessionUserId)
+				|| adminUsername.equalsIgnoreCase(effectiveUsername);
 
 		if (!isMatched)
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied: You can only access your own notification data");

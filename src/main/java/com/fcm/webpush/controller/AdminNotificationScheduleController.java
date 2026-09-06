@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -63,5 +64,12 @@ public class AdminNotificationScheduleController {
 		adminService.verifyAdminAuthorization();
 		final var response = notificationScheduleService.updateScheduleStatus(id, active);
 		return ResponseEntity.ok(response);
+	}
+
+	@DeleteMapping("/{id}")
+	public ResponseEntity<Void> deleteSchedule(@PathVariable final Long id) {
+		adminService.verifyAdminAuthorization();
+		notificationScheduleService.deleteSchedule(id);
+		return ResponseEntity.noContent().build();
 	}
 }

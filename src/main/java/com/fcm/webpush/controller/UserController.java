@@ -28,14 +28,14 @@ public class UserController {
 
 	@PostMapping("/register")
 	public ResponseEntity<UserResponseDto> registerUser(@Valid @RequestBody final UserRegistrationRequestDto request) {
-		final var response = userService.registerUser(request);
+		final var response 			= userService.registerUser(request);
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 
 	@PostMapping("/login")
 	public ResponseEntity<UserResponseDto> loginUser(@Valid @RequestBody final UserLoginRequestDto request) {
-		final var response = userService.loginUser(request);
-		final var session = httpRequest.getSession(true);
+		final var response 				= userService.loginUser(request);
+		final var session 				= httpRequest.getSession(true);
 		session.setAttribute("username", response.getUsername());
 		session.setAttribute("userId", response.getId());
 		return ResponseEntity.ok(response);
@@ -43,7 +43,7 @@ public class UserController {
 
 	@PostMapping("/logout")
 	public ResponseEntity<Void> logoutUser(@RequestParam(required = false) final String guestId, @RequestParam(required = false) final String fcmToken) {
-		final var session = httpRequest.getSession(false);
+		final var session 				= httpRequest.getSession(false);
 		if (session != null)
 			session.invalidate();
 

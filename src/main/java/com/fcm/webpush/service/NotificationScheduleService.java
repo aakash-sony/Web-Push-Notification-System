@@ -17,5 +17,7 @@ public interface NotificationScheduleService {
 
 	NotificationScheduleResponseDto updateScheduleStatus(Long id, boolean active);
 
+	void deleteSchedule(Long id);
+
 	void processDueSchedules();
 }

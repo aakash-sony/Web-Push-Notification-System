@@ -1,5 +1,6 @@
 package com.fcm.webpush.repository;
 
+import java.util.Collection;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -14,9 +15,13 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
 
 	Page<NotificationLog> findByUserIdOrderByCreatedAtDesc(String userId, Pageable pageable);
 
+	Page<NotificationLog> findByUserIdInOrderByCreatedAtDesc(Collection<String> userIds, Pageable pageable);
+
 	Page<NotificationLog> findByGuestIdOrderByCreatedAtDesc(String guestId, Pageable pageable);
 
 	long countByUserIdAndIsReadFalse(String userId);
+
+	long countByUserIdInAndIsReadFalse(Collection<String> userIds);
 
 	long countByGuestIdAndIsReadFalse(String guestId);
 
